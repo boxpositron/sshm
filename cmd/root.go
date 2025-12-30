@@ -51,6 +51,36 @@ Examples:
 	Args:          cobra.ArbitraryArgs,
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	// ValidArgsFunction provides shell completion for host names
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Only complete the first positional argument (host name)
+		if len(args) != 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		var hosts []config.SSHHost
+		var err error
+
+		if configFile != "" {
+			hosts, err = config.ParseSSHConfigFile(configFile)
+		} else {
+			hosts, err = config.ParseSSHConfig()
+		}
+
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
+
+		var completions []string
+		toCompleteLower := strings.ToLower(toComplete)
+		for _, host := range hosts {
+			if strings.HasPrefix(strings.ToLower(host.Name), toCompleteLower) {
+				completions = append(completions, host.Name)
+			}
+		}
+
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
 			runInteractiveMode()
