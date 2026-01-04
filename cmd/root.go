@@ -27,6 +27,10 @@ var configFile string
 // forceTTY forces pseudo-TTY allocation for remote commands
 var forceTTY bool
 
+// searchMode enables the focus on search mode at startup
+var searchMode bool
+
+// RootCmd is the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   "sshm [host] [command...]",
 	Short: "SSH Manager - A modern SSH connection manager",
@@ -109,7 +113,7 @@ func runInteractiveMode() {
 	}
 
 	// Run the interactive TUI
-	if err := ui.RunInteractiveMode(hosts, configFile, AppVersion); err != nil {
+	if err := ui.RunInteractiveMode(hosts, configFile, searchMode, AppVersion); err != nil {
 		log.Fatalf("Error running interactive mode: %v", err)
 	}
 }
@@ -223,5 +227,8 @@ func Execute() {
 func init() {
 	RootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "SSH config file to use (default: ~/.ssh/config)")
 	RootCmd.Flags().BoolVarP(&forceTTY, "tty", "t", false, "Force pseudo-TTY allocation (useful for interactive remote commands)")
+	RootCmd.PersistentFlags().BoolVarP(&searchMode, "search", "s", false, "Focus on search input at startup")
+
+	// Set custom version template with update check
 	RootCmd.SetVersionTemplate(getVersionWithUpdateCheck())
 }

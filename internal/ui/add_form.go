@@ -49,7 +49,7 @@ func NewAddForm(hostname string, styles Styles, width, height int, configFile st
 		}
 	}
 
-	inputs := make([]textinput.Model, 10) // Increased from 9 to 10 for RequestTTY
+	inputs := make([]textinput.Model, 11)
 
 	// Name input
 	inputs[nameInput] = textinput.New()
@@ -90,6 +90,12 @@ func NewAddForm(hostname string, styles Styles, width, height int, configFile st
 	inputs[proxyJumpInput].Placeholder = "user@jump-host:port or existing-host-name"
 	inputs[proxyJumpInput].CharLimit = 200
 	inputs[proxyJumpInput].Width = 50
+
+	// ProxyCommand input
+	inputs[proxyCommandInput] = textinput.New()
+	inputs[proxyCommandInput].Placeholder = "ssh -W %h:%p Jumphost"
+	inputs[proxyCommandInput].CharLimit = 200
+	inputs[proxyCommandInput].Width = 50
 
 	// SSH Options input
 	inputs[optionsInput] = textinput.New()
@@ -138,6 +144,7 @@ const (
 	portInput
 	identityInput
 	proxyJumpInput
+	proxyCommandInput
 	tagsInput
 	// Advanced tab inputs
 	optionsInput
@@ -229,11 +236,11 @@ func (m *addFormModel) getFirstInputForTab(tab int) int {
 func (m *addFormModel) getInputsForCurrentTab() []int {
 	switch m.currentTab {
 	case tabGeneral:
-		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, tagsInput}
+		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, proxyCommandInput, tagsInput}
 	case tabAdvanced:
 		return []int{optionsInput, remoteCommandInput, requestTTYInput}
 	default:
-		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, tagsInput}
+		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, proxyCommandInput, tagsInput}
 	}
 }
 
@@ -275,11 +282,29 @@ func (m *addFormModel) handleNavigation(key string) tea.Cmd {
 		currentPos++
 	}
 
-	// Wrap around within current tab
+	// Handle transitions between tabs
 	if currentPos >= len(currentTabInputs) {
-		currentPos = 0
+		// Move to next tab
+		if m.currentTab == tabGeneral {
+			// Move to advanced tab
+			m.currentTab = tabAdvanced
+			m.focused = m.getFirstInputForTab(tabAdvanced)
+			return m.updateFocus()
+		} else {
+			// Wrap around to first field of current tab
+			currentPos = 0
+		}
 	} else if currentPos < 0 {
-		currentPos = len(currentTabInputs) - 1
+		// Move to previous tab
+		if m.currentTab == tabAdvanced {
+			// Move to general tab
+			m.currentTab = tabGeneral
+			currentTabInputs = m.getInputsForCurrentTab()
+			currentPos = len(currentTabInputs) - 1
+		} else {
+			// Wrap around to last field of current tab
+			currentPos = len(currentTabInputs) - 1
+		}
 	}
 
 	m.focused = currentTabInputs[currentPos]
@@ -401,6 +426,7 @@ func (m *addFormModel) renderGeneralTab() string {
 		{portInput, "Port"},
 		{identityInput, "Identity File"},
 		{proxyJumpInput, "ProxyJump"},
+		{proxyCommandInput, "ProxyCommand"},
 		{tagsInput, "Tags (comma-separated)"},
 	}
 
@@ -489,6 +515,7 @@ func (m *addFormModel) submitForm() tea.Cmd {
 		port := strings.TrimSpace(m.inputs[portInput].Value())
 		identity := strings.TrimSpace(m.inputs[identityInput].Value())
 		proxyJump := strings.TrimSpace(m.inputs[proxyJumpInput].Value())
+		proxyCommand := strings.TrimSpace(m.inputs[proxyCommandInput].Value())
 		options := strings.TrimSpace(m.inputs[optionsInput].Value())
 		remoteCommand := strings.TrimSpace(m.inputs[remoteCommandInput].Value())
 		requestTTY := strings.TrimSpace(m.inputs[requestTTYInput].Value())
@@ -526,6 +553,7 @@ func (m *addFormModel) submitForm() tea.Cmd {
 			Port:          port,
 			Identity:      identity,
 			ProxyJump:     proxyJump,
+			ProxyCommand:  proxyCommand,
 			Options:       config.ParseSSHOptionsFromCommand(options),
 			RemoteCommand: remoteCommand,
 			RequestTTY:    requestTTY,
