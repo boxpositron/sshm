@@ -74,14 +74,14 @@ type Model struct {
 	filteredHosts  []config.SSHHost
 	searchMode     bool
 	deleteMode     bool
-	deleteHost     string
+	deleteHost     *config.SSHHost // Host to be deleted (with line number for precise targeting)
 	historyManager *history.HistoryManager
 	pingManager    *connectivity.PingManager
 	sortMode       SortMode
 	configFile     string // Path to the SSH config file
 
 	// Application configuration
-	appConfig      *config.AppConfig
+	appConfig *config.AppConfig
 
 	// Version update information
 	updateInfo     *version.UpdateInfo

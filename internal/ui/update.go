@@ -452,7 +452,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.deleteMode {
 			// Exit delete mode
 			m.deleteMode = false
-			m.deleteHost = ""
+			m.deleteHost = nil
 			m.table.Focus()
 			return m, nil
 		}
@@ -508,15 +508,13 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.deleteMode {
 			// Confirm deletion
 			var err error
-			if m.configFile != "" {
-				err = config.DeleteSSHHostFromFile(m.deleteHost, m.configFile)
-			} else {
-				err = config.DeleteSSHHost(m.deleteHost)
+			if m.deleteHost != nil {
+				err = config.DeleteSSHHostWithLine(*m.deleteHost)
 			}
 			if err != nil {
 				// Could display an error message here
 				m.deleteMode = false
-				m.deleteHost = ""
+				m.deleteHost = nil
 				m.table.Focus()
 				return m, nil
 			}
@@ -533,7 +531,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if parseErr != nil {
 				// Could display an error message here
 				m.deleteMode = false
-				m.deleteHost = ""
+				m.deleteHost = nil
 				m.table.Focus()
 				return m, nil
 			}
@@ -548,7 +546,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			m.updateTableRows()
 			m.deleteMode = false
-			m.deleteHost = ""
+			m.deleteHost = nil
 			m.table.Focus()
 			return m, nil
 		} else {
@@ -673,11 +671,13 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		if !m.searchMode && !m.deleteMode {
 			// Delete the selected host
-			selected := m.table.SelectedRow()
-			if len(selected) > 0 {
-				hostName := extractHostNameFromTableRow(selected[0]) // Extract hostname from first column
+			cursor := m.table.Cursor()
+			if cursor >= 0 && cursor < len(m.filteredHosts) {
+				// Get the host at the cursor position (which corresponds to filteredHosts index)
+				targetHost := &m.filteredHosts[cursor]
+
 				m.deleteMode = true
-				m.deleteHost = hostName
+				m.deleteHost = targetHost
 				m.table.Blur()
 				return m, nil
 			}
