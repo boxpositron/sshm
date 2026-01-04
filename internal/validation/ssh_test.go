@@ -24,6 +24,19 @@ func TestValidateHostname(t *testing.T) {
 		{"hostname ending with dot", "example.com.", false},
 		{"hostname with hyphen", "my-server.com", true},
 		{"hostname starting with number", "1example.com", true},
+		{"multiple hyphens and subdomains", "my-host-name-01.cwd.pub.domain.net", true},
+		{"multiple hyphens", "my-host-name-01", true},
+		{"complex hostname with hyphens", "server-01-prod.data-center.example.com", true},
+		{"hostname with consecutive hyphens", "my--server.com", true},
+		{"single char labels", "a.b.c.d.com", true},
+		// SSH tokens support (issue #32 comment)
+		{"SSH token %h", "%h.server.com", true},
+		{"SSH token %p", "server.com:%p", true},
+		{"SSH token %r", "%r@server.com", true},
+		{"SSH token %u", "%u.example.com", true},
+		{"SSH token %n", "%n.domain.net", true},
+		{"SSH token %C", "host-%C.com", true},
+		{"multiple SSH tokens", "%h.%u.server.com", true},
 	}
 
 	for _, tt := range tests {

@@ -144,7 +144,11 @@ func (m Model) renderListView() string {
 func (m Model) renderDeleteConfirmation() string {
 	// Remove emojis (uncertain width depending on terminal) to stabilize the frame
 	title := "DELETE SSH HOST"
-	question := fmt.Sprintf("Are you sure you want to delete host '%s'?", m.deleteHost)
+	hostName := ""
+	if m.deleteHost != nil {
+		hostName = m.deleteHost.Name
+	}
+	question := fmt.Sprintf("Are you sure you want to delete host '%s'?", hostName)
 	action := "This action cannot be undone."
 	help := "Enter: confirm • Esc: cancel"
 

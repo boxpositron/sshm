@@ -7,9 +7,8 @@ import (
 )
 
 func TestRootCommand(t *testing.T) {
-	// Test that the root command is properly configured
-	if RootCmd.Use != "sshm [host]" {
-		t.Errorf("Expected Use 'sshm [host]', got '%s'", RootCmd.Use)
+	if RootCmd.Use != "sshm [host] [command...]" {
+		t.Errorf("Expected Use 'sshm [host] [command...]', got '%s'", RootCmd.Use)
 	}
 
 	if RootCmd.Short != "SSH Manager - A modern SSH connection manager" {
@@ -22,10 +21,8 @@ func TestRootCommand(t *testing.T) {
 }
 
 func TestRootCommandFlags(t *testing.T) {
-	// Test that persistent flags are properly configured
 	flags := RootCmd.PersistentFlags()
 
-	// Check config flag
 	configFlag := flags.Lookup("config")
 	if configFlag == nil {
 		t.Error("Expected --config flag to be defined")
@@ -33,6 +30,15 @@ func TestRootCommandFlags(t *testing.T) {
 	}
 	if configFlag.Shorthand != "c" {
 		t.Errorf("Expected config flag shorthand 'c', got '%s'", configFlag.Shorthand)
+	}
+
+	ttyFlag := RootCmd.Flags().Lookup("tty")
+	if ttyFlag == nil {
+		t.Error("Expected --tty flag to be defined")
+		return
+	}
+	if ttyFlag.Shorthand != "t" {
+		t.Errorf("Expected tty flag shorthand 't', got '%s'", ttyFlag.Shorthand)
 	}
 }
 
@@ -103,13 +109,17 @@ func TestExecuteFunction(t *testing.T) {
 }
 
 func TestConnectToHostFunction(t *testing.T) {
-	// Test that connectToHost function exists and can be called
-	// Note: We can't easily test the actual connection without a valid SSH config
-	// and without actually connecting to a host, but we can verify the function exists
 	t.Log("connectToHost function exists and is accessible")
+}
 
-	// The function will handle errors internally (like host not found)
-	// We don't want to actually test the SSH connection in unit tests
+func TestRemoteCommandUsage(t *testing.T) {
+	if !strings.Contains(RootCmd.Long, "command") {
+		t.Error("Long description should mention remote command execution")
+	}
+
+	if !strings.Contains(RootCmd.Long, "uptime") {
+		t.Error("Long description should include command examples")
+	}
 }
 
 func TestRunInteractiveModeFunction(t *testing.T) {

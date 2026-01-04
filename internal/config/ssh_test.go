@@ -1694,3 +1694,89 @@ Host production-server
 		}
 	}
 }
+
+func TestParseSSHConfigWithQuotedHostNames(t *testing.T) {
+	tempDir := t.TempDir()
+
+	configFile := filepath.Join(tempDir, "config")
+	configContent := `# Test hosts with quoted names (issue #32)
+Host "my-host-name-01"
+    HostName my-host-name-01.cwd.pub.domain.net
+    Port 2222
+    User my_user
+
+Host "qa-test-vm"
+    HostName qa-test-vm.example.com
+    User guillaume
+    Port 22
+
+Host normal-host
+    HostName normal.example.com
+    User testuser
+
+Host "quoted1" "quoted2"
+    HostName multi.example.com
+    User multiuser
+`
+
+	err := os.WriteFile(configFile, []byte(configContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+
+	hosts, err := ParseSSHConfigFile(configFile)
+	if err != nil {
+		t.Fatalf("ParseSSHConfigFile() error = %v", err)
+	}
+
+	// Should get 5 hosts: my-host-name-01, qa-test-vm, normal-host, quoted1, quoted2
+	// All without quotes
+	expectedHosts := map[string]struct{}{
+		"my-host-name-01": {},
+		"qa-test-vm":      {},
+		"normal-host":     {},
+		"quoted1":         {},
+		"quoted2":         {},
+	}
+
+	if len(hosts) != len(expectedHosts) {
+		t.Errorf("Expected %d hosts, got %d", len(expectedHosts), len(hosts))
+		for _, host := range hosts {
+			t.Logf("Found host: %q", host.Name)
+		}
+	}
+
+	hostMap := make(map[string]SSHHost)
+	for _, host := range hosts {
+		// Verify no quotes in host names
+		if strings.Contains(host.Name, `"`) {
+			t.Errorf("Host name %q still contains quotes", host.Name)
+		}
+		hostMap[host.Name] = host
+	}
+
+	for expectedHostName := range expectedHosts {
+		if _, found := hostMap[expectedHostName]; !found {
+			t.Errorf("Expected host %q not found", expectedHostName)
+		}
+	}
+
+	// Verify specific host details
+	if host, found := hostMap["my-host-name-01"]; found {
+		if host.Hostname != "my-host-name-01.cwd.pub.domain.net" {
+			t.Errorf("Host my-host-name-01 has wrong hostname: %q", host.Hostname)
+		}
+		if host.Port != "2222" {
+			t.Errorf("Host my-host-name-01 has wrong port: %q", host.Port)
+		}
+		if host.User != "my_user" {
+			t.Errorf("Host my-host-name-01 has wrong user: %q", host.User)
+		}
+	}
+
+	if host, found := hostMap["qa-test-vm"]; found {
+		if host.Hostname != "qa-test-vm.example.com" {
+			t.Errorf("Host qa-test-vm has wrong hostname: %q", host.Hostname)
+		}
+	}
+}

@@ -11,6 +11,7 @@ import (
 )
 
 // ValidateHostname checks if a hostname is valid
+// Accepts regular hostnames, IP addresses, and SSH tokens like %h, %p, %r, %u, %n, %C, %d, %i, %k, %L, %l, %T
 func ValidateHostname(hostname string) bool {
 	if len(hostname) == 0 || len(hostname) > 253 {
 		return false
@@ -22,7 +23,18 @@ func ValidateHostname(hostname string) bool {
 		return false
 	}
 
-	hostnameRegex := regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$`)
+	// Check if hostname contains SSH tokens (e.g., %h, %p, %r, %u, %n, etc.)
+	// SSH tokens are documented in ssh_config(5) man page
+	sshTokenRegex := regexp.MustCompile(`%[hprunCdiklLT]`)
+	if sshTokenRegex.MatchString(hostname) {
+		// If it contains SSH tokens, it's a valid SSH config construct
+		return true
+	}
+
+	// RFC 1123: each label must start with alphanumeric, end with alphanumeric,
+	// and contain only alphanumeric and hyphens. Labels are 1-63 chars.
+	// A hostname is one or more labels separated by dots.
+	hostnameRegex := regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]|[a-zA-Z0-9]{0,62})?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]|[a-zA-Z0-9]{0,62})?)*$`)
 	return hostnameRegex.MatchString(hostname)
 }
 

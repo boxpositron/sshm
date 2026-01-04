@@ -19,11 +19,13 @@ type SSHHost struct {
 	Port          string
 	Identity      string
 	ProxyJump     string
+	ProxyCommand  string
 	Options       string
 	RemoteCommand string // Command to execute after SSH connection
 	RequestTTY    string // Request TTY (yes, no, force, auto)
 	Tags          []string
 	SourceFile    string // Path to the config file where this host is defined
+	LineNumber    int    // Line number in the source file where this host block starts (1-indexed)
 
 	// Temporary field to handle multiple aliases during parsing
 	aliasNames []string `json:"-"` // Do not serialize this field
@@ -211,8 +213,10 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 	var currentHost *SSHHost
 	var pendingTags []string
 	scanner := bufio.NewScanner(file)
+	lineNumber := 0
 
 	for scanner.Scan() {
+		lineNumber++
 		line := strings.TrimSpace(scanner.Text())
 
 		// Ignore empty lines
@@ -279,8 +283,12 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			hostNames := strings.Fields(value)
 
 			// Skip hosts with wildcards (*, ?) as they are typically patterns, not actual hosts
+			// Also remove surrounding quotes from host names
 			var validHostNames []string
 			for _, hostName := range hostNames {
+				// Remove surrounding double quotes if present
+				hostName = strings.Trim(hostName, `"`)
+
 				if !strings.ContainsAny(hostName, "*?") {
 					validHostNames = append(validHostNames, hostName)
 				}
@@ -299,6 +307,7 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 				Port:       "22",              // Default port
 				Tags:       pendingTags,       // Assign pending tags to this host
 				SourceFile: absPath,           // Track which file this host comes from
+				LineNumber: lineNumber,        // Track the line number where Host declaration starts
 			}
 
 			// Store additional host names for later processing
@@ -327,6 +336,10 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 		case "proxyjump":
 			if currentHost != nil {
 				currentHost.ProxyJump = value
+			}
+		case "proxycommand":
+			if currentHost != nil {
+				currentHost.ProxyCommand = value
 			}
 		case "remotecommand":
 			if currentHost != nil {
@@ -613,6 +626,13 @@ func AddSSHHostToFile(host SSHHost, configPath string) error {
 		}
 	}
 
+	if host.ProxyCommand != "" {
+		_, err = file.WriteString(fmt.Sprintf("    ProxyCommand=%s\n", host.ProxyCommand))
+		if err != nil {
+			return err
+		}
+	}
+
 	if host.RemoteCommand != "" {
 		_, err = file.WriteString(fmt.Sprintf("    RemoteCommand %s\n", host.RemoteCommand))
 		if err != nil {
@@ -646,11 +666,32 @@ func AddSSHHostToFile(host SSHHost, configPath string) error {
 }
 
 // ParseSSHOptionsFromCommand converts SSH command line options to config format
-// Input: "-o Compression=yes -o ServerAliveInterval=60"
+// Input: "-o Compression=yes -o ServerAliveInterval=60" or "ForwardX11 true" or "Compression yes"
 // Output: "Compression yes\nServerAliveInterval 60"
 func ParseSSHOptionsFromCommand(options string) string {
 	if options == "" {
 		return ""
+	}
+
+	options = strings.TrimSpace(options)
+
+	// If it doesn't contain -o, assume it's already in config format
+	if !strings.Contains(options, "-o") {
+		// Just normalize spaces and ensure newlines between options
+		lines := strings.Split(options, "\n")
+		var result []string
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			// Normalize spacing (replace multiple spaces with single space)
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				result = append(result, strings.Join(parts, " "))
+			}
+		}
+		return strings.Join(result, "\n")
 	}
 
 	var result []string
@@ -676,6 +717,12 @@ func ParseSSHOptionsFromCommand(options string) string {
 func FormatSSHOptionsForCommand(options string) string {
 	if options == "" {
 		return ""
+	}
+
+	// If already in command format (starts with -o), return as is
+	trimmed := strings.TrimSpace(options)
+	if strings.HasPrefix(trimmed, "-o ") {
+		return trimmed
 	}
 
 	var result []string
@@ -853,6 +900,9 @@ func quickHostSearchInFile(hostName string, configPath string, processedFiles ma
 
 			// Check if our target host is in this Host declaration
 			for _, candidateHostName := range hostNames {
+				// Remove surrounding double quotes if present
+				candidateHostName = strings.Trim(candidateHostName, `"`)
+
 				// Skip hosts with wildcards (*, ?) as they are typically patterns
 				if !strings.ContainsAny(candidateHostName, "*?") && candidateHostName == hostName {
 					return true, nil // Found the host!
@@ -1044,6 +1094,9 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						if newHost.ProxyJump != "" {
 							newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
 						}
+						if newHost.ProxyCommand != "" {
+							newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
+						}
 						if newHost.RemoteCommand != "" {
 							newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
 						}
@@ -1097,6 +1150,9 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						}
 						if newHost.ProxyJump != "" {
 							newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
+						}
+						if newHost.ProxyCommand != "" {
+							newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
 						}
 						if newHost.RemoteCommand != "" {
 							newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
@@ -1188,6 +1244,9 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 					if newHost.ProxyJump != "" {
 						newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
 					}
+					if newHost.ProxyCommand != "" {
+						newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
+					}
 					if newHost.RemoteCommand != "" {
 						newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
 					}
@@ -1242,6 +1301,9 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 					if newHost.ProxyJump != "" {
 						newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
 					}
+					if newHost.ProxyCommand != "" {
+						newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
+					}
 					if newHost.RemoteCommand != "" {
 						newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
 					}
@@ -1283,11 +1345,21 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 
 // DeleteSSHHost removes an SSH host configuration from the config file
 func DeleteSSHHost(hostName string) error {
-	return DeleteSSHHostV2(hostName)
+	return DeleteSSHHostV2(hostName, 0) // Legacy: without line number
+}
+
+// DeleteSSHHostWithLine deletes a specific SSH host by name and line number
+func DeleteSSHHostWithLine(host SSHHost) error {
+	return DeleteSSHHostFromFileWithLine(host.Name, host.SourceFile, host.LineNumber)
 }
 
 // DeleteSSHHostFromFile deletes an SSH host from a specific config file
 func DeleteSSHHostFromFile(hostName, configPath string) error {
+	return DeleteSSHHostFromFileWithLine(hostName, configPath, 0) // Legacy: without line number
+}
+
+// DeleteSSHHostFromFileWithLine deletes an SSH host from a specific config file at a specific line
+func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber int) error {
 	configMutex.Lock()
 	defer configMutex.Unlock()
 
@@ -1314,11 +1386,13 @@ func DeleteSSHHostFromFile(hostName, configPath string) error {
 	hostFound := false
 
 	for i < len(lines) {
+		currentLineNumber := i + 1 // Convert 0-indexed to 1-indexed
 		line := strings.TrimSpace(lines[i])
 
 		// Check for tags comment followed by Host
 		if strings.HasPrefix(line, "# Tags:") && i+1 < len(lines) {
 			nextLine := strings.TrimSpace(lines[i+1])
+			nextLineNumber := i + 2 // The Host line is at i+1, so its 1-indexed number is i+2
 
 			// Check if this is a Host line that contains our target host
 			if strings.HasPrefix(nextLine, "Host ") {
@@ -1334,7 +1408,10 @@ func DeleteSSHHostFromFile(hostName, configPath string) error {
 					}
 				}
 
-				if targetHostIndex != -1 {
+				// Only proceed if:
+				// 1. We found the host name
+				// 2. Either no line number was specified (targetLineNumber == 0) OR the line numbers match
+				if targetHostIndex != -1 && (targetLineNumber == 0 || nextLineNumber == targetLineNumber) {
 					hostFound = true
 
 					if isMultiHost && len(hostNames) > 1 {
@@ -1372,7 +1449,12 @@ func DeleteSSHHostFromFile(hostName, configPath string) error {
 							i++
 						}
 
-						continue
+						// Copy remaining lines and break to prevent deleting other duplicates
+						for i < len(lines) {
+							newLines = append(newLines, lines[i])
+							i++
+						}
+						break
 					} else {
 						// Single host or last host in multi-host block, delete entire block
 						// Skip tags comment and Host line
@@ -1388,7 +1470,12 @@ func DeleteSSHHostFromFile(hostName, configPath string) error {
 							i++
 						}
 
-						continue
+						// Copy remaining lines and break to prevent deleting other duplicates
+						for i < len(lines) {
+							newLines = append(newLines, lines[i])
+							i++
+						}
+						break
 					}
 				}
 			}
@@ -1408,7 +1495,10 @@ func DeleteSSHHostFromFile(hostName, configPath string) error {
 				}
 			}
 
-			if targetHostIndex != -1 {
+			// Only proceed if:
+			// 1. We found the host name
+			// 2. Either no line number was specified (targetLineNumber == 0) OR the line numbers match
+			if targetHostIndex != -1 && (targetLineNumber == 0 || currentLineNumber == targetLineNumber) {
 				hostFound = true
 
 				if isMultiHost && len(hostNames) > 1 {
@@ -1443,7 +1533,12 @@ func DeleteSSHHostFromFile(hostName, configPath string) error {
 						i++
 					}
 
-					continue
+					// Copy remaining lines and break to prevent deleting other duplicates
+					for i < len(lines) {
+						newLines = append(newLines, lines[i])
+						i++
+					}
+					break
 				} else {
 					// Single host, delete entire block
 					// Skip Host line
@@ -1459,7 +1554,12 @@ func DeleteSSHHostFromFile(hostName, configPath string) error {
 						i++
 					}
 
-					continue
+					// Copy remaining lines and break to prevent deleting other duplicates
+					for i < len(lines) {
+						newLines = append(newLines, lines[i])
+						i++
+					}
+					break
 				}
 			}
 		}
@@ -1542,15 +1642,15 @@ func UpdateSSHHostV2(oldName string, newHost SSHHost) error {
 }
 
 // DeleteSSHHostV2 removes an SSH host configuration, searching in all config files
-func DeleteSSHHostV2(hostName string) error {
+func DeleteSSHHostV2(hostName string, targetLineNumber int) error {
 	// Find the host to determine which file it's in
 	existingHost, err := FindHostInAllConfigs(hostName)
 	if err != nil {
 		return err
 	}
 
-	// Delete the host from its source file
-	return DeleteSSHHostFromFile(hostName, existingHost.SourceFile)
+	// Delete the host from its source file using line number if provided
+	return DeleteSSHHostFromFileWithLine(hostName, existingHost.SourceFile, targetLineNumber)
 }
 
 // AddSSHHostWithFileSelection adds a new SSH host to a user-specified config file
@@ -1742,6 +1842,9 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 					if commonProperties.ProxyJump != "" {
 						newLines = append(newLines, "    ProxyJump "+commonProperties.ProxyJump)
 					}
+					if commonProperties.ProxyCommand != "" {
+						newLines = append(newLines, "    ProxyCommand="+commonProperties.ProxyCommand)
+					}
 					if commonProperties.RemoteCommand != "" {
 						newLines = append(newLines, "    RemoteCommand "+commonProperties.RemoteCommand)
 					}
@@ -1827,6 +1930,9 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 				}
 				if commonProperties.ProxyJump != "" {
 					newLines = append(newLines, "    ProxyJump "+commonProperties.ProxyJump)
+				}
+				if commonProperties.ProxyCommand != "" {
+					newLines = append(newLines, "    ProxyCommand="+commonProperties.ProxyCommand)
 				}
 				if commonProperties.RemoteCommand != "" {
 					newLines = append(newLines, "    RemoteCommand "+commonProperties.RemoteCommand)
