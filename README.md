@@ -275,6 +275,53 @@ sshm --version
 sshm --help
 ```
 
+### Shell Completion
+
+SSHM supports shell completion for host names, making it easy to connect to hosts without typing full names:
+
+```bash
+sshm <TAB>           # Lists all available hosts
+sshm pro<TAB>        # Completes to hosts starting with "pro" (e.g., prod-server)
+```
+
+**Setup Instructions:**
+
+**Bash:**
+```bash
+# Enable for current session
+source <(sshm completion bash)
+
+# Enable permanently (add to ~/.bashrc)
+echo 'source <(sshm completion bash)' >> ~/.bashrc
+```
+
+**Zsh:**
+```bash
+# Enable for current session
+source <(sshm completion zsh)
+
+# Enable permanently (add to ~/.zshrc)
+echo 'source <(sshm completion zsh)' >> ~/.zshrc
+```
+
+**Fish:**
+```bash
+# Enable for current session
+sshm completion fish | source
+
+# Enable permanently
+sshm completion fish > ~/.config/fish/completions/sshm.fish
+```
+
+**PowerShell:**
+```powershell
+# Enable for current session
+sshm completion powershell | Out-String | Invoke-Expression
+
+# Enable permanently (add to your PowerShell profile)
+Add-Content $PROFILE 'sshm completion powershell | Out-String | Invoke-Expression'
+```
+
 ### Direct Host Connection
 
 SSHM supports direct connection to hosts via the command line, making it easy to integrate into your existing workflow:
