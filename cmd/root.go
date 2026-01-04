@@ -24,19 +24,33 @@ var AppVersion = "dev"
 // configFile holds the path to the SSH config file
 var configFile string
 
+// forceTTY forces pseudo-TTY allocation for remote commands
+var forceTTY bool
+
+// searchMode enables the focus on search mode at startup
+var searchMode bool
+
 // RootCmd is the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   "sshm [host]",
+	Use:   "sshm [host] [command...]",
 	Short: "SSH Manager - A modern SSH connection manager",
 	Long: `SSHM is a modern SSH manager for your terminal.
 
 Main usage:
   Running 'sshm' (without arguments) opens the interactive TUI window to browse, search, and connect to your SSH hosts graphically.
   Running 'sshm <host>' connects directly to the specified host and records the connection in your history.
+  Running 'sshm <host> <command>' executes the command on the remote host and returns the output.
 
 You can also use sshm in CLI mode for other operations like adding, editing, or searching hosts.
 
-Hosts are read from your ~/.ssh/config file by default.`,
+Hosts are read from your ~/.ssh/config file by default.
+
+Examples:
+  sshm                           # Open interactive TUI
+  sshm prod-server               # Connect to host interactively
+  sshm prod-server uptime        # Execute 'uptime' on remote host
+  sshm prod-server ls -la /var   # Execute command with arguments
+  sshm -t prod-server sudo reboot # Force TTY for interactive commands`,
 	Version:       AppVersion,
 	Args:          cobra.ArbitraryArgs,
 	SilenceUsage:  true,
@@ -71,16 +85,19 @@ Hosts are read from your ~/.ssh/config file by default.`,
 
 		return completions, cobra.ShellCompDirectiveNoFileComp
 	},
+	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// If no arguments provided, run interactive mode
 		if len(args) == 0 {
 			runInteractiveMode()
 			return nil
 		}
 
-		// If a host name is provided, connect directly
 		hostName := args[0]
-		connectToHost(hostName)
+		var remoteCommand []string
+		if len(args) > 1 {
+			remoteCommand = args[1:]
+		}
+		connectToHost(hostName, remoteCommand)
 		return nil
 	},
 }
@@ -127,13 +144,12 @@ func runInteractiveMode() {
 	}
 
 	// Run the interactive TUI
-	if err := ui.RunInteractiveMode(hosts, configFile, AppVersion); err != nil {
+	if err := ui.RunInteractiveMode(hosts, configFile, searchMode, AppVersion); err != nil {
 		log.Fatalf("Error running interactive mode: %v", err)
 	}
 }
 
-func connectToHost(hostName string) {
-	// Quick check if host exists without full parsing (optimized for connection)
+func connectToHost(hostName string, remoteCommand []string) {
 	var hostFound bool
 	var err error
 
@@ -153,45 +169,42 @@ func connectToHost(hostName string) {
 		os.Exit(1)
 	}
 
-	// Record the connection in history
 	historyManager, err := history.NewHistoryManager()
 	if err != nil {
-		// Log the error but don't prevent the connection
 		fmt.Printf("Warning: Could not initialize connection history: %v\n", err)
 	} else {
 		err = historyManager.RecordConnection(hostName)
 		if err != nil {
-			// Log the error but don't prevent the connection
 			fmt.Printf("Warning: Could not record connection history: %v\n", err)
 		}
 	}
 
-	// Build and execute the SSH command
-	fmt.Printf("Connecting to %s...\n", hostName)
-
-	var sshCmd *exec.Cmd
 	var args []string
 
 	if configFile != "" {
 		args = append(args, "-F", configFile)
 	}
+
+	if forceTTY {
+		args = append(args, "-t")
+	}
+
 	args = append(args, hostName)
 
-	// Note: We don't add RemoteCommand here because if it's configured in SSH config,
-	// SSH will handle it automatically. Adding it as a command line argument would conflict.
+	if len(remoteCommand) > 0 {
+		args = append(args, remoteCommand...)
+	} else {
+		fmt.Printf("Connecting to %s...\n", hostName)
+	}
 
-	sshCmd = exec.Command("ssh", args...)
-
-	// Set up the command to use the same stdin, stdout, and stderr as the parent process
+	sshCmd := exec.Command("ssh", args...)
 	sshCmd.Stdin = os.Stdin
 	sshCmd.Stdout = os.Stdout
 	sshCmd.Stderr = os.Stderr
 
-	// Execute the SSH command
 	err = sshCmd.Run()
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
-			// SSH command failed, exit with the same code
 			if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
 				os.Exit(status.ExitStatus())
 			}
@@ -227,17 +240,13 @@ func getVersionWithUpdateCheck() string {
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
-	// Custom error handling for unknown commands that might be host names
 	if err := RootCmd.Execute(); err != nil {
-		// Check if this is an "unknown command" error and the argument might be a host name
 		errStr := err.Error()
 		if strings.Contains(errStr, "unknown command") {
-			// Extract the command name from the error
 			parts := strings.Split(errStr, "\"")
 			if len(parts) >= 2 {
 				potentialHost := parts[1]
-				// Try to connect to this as a host
-				connectToHost(potentialHost)
+				connectToHost(potentialHost, nil)
 				return
 			}
 		}
@@ -247,8 +256,9 @@ func Execute() {
 }
 
 func init() {
-	// Add the config file flag
 	RootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "SSH config file to use (default: ~/.ssh/config)")
+	RootCmd.Flags().BoolVarP(&forceTTY, "tty", "t", false, "Force pseudo-TTY allocation (useful for interactive remote commands)")
+	RootCmd.PersistentFlags().BoolVarP(&searchMode, "search", "s", false, "Focus on search input at startup")
 
 	// Set custom version template with update check
 	RootCmd.SetVersionTemplate(getVersionWithUpdateCheck())
